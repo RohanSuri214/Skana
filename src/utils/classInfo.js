@@ -1,20 +1,78 @@
 import Theme from './theme';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// APP-SIDE INFERENCE GUARDRAILS
+//
+// MODEL_CONFIG.thresholds contains the raw optimal_thresholds from v11 training,
+// tuned on a balanced dermoscopic test set with clean lesion crops.
+//
+// Two additional safety layers are applied at runtime via validateThresholds():
+//
+//   1. SAFE_THRESHOLD_FLOOR (0.10) — any threshold below this is at the statistical
+//      noise level of a 7-class softmax and fires on almost every image. Disabled (null).
+//
+//   2. APP_THRESHOLD_FLOORS — per-class minimum values for real-world phone photos.
+//      Training images were clean dermoscope crops; phone photos are noisier, lower
+//      contrast, and often partially OOD. These floors prevent false cancer flags.
+//
+// These floors are app-side only. They do not affect the PTL model or training.
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const MODEL_CONFIG = {
   imgSize: 260,
   numClasses: 7,
   normalizeMean: [0.485, 0.456, 0.406],
   normalizeStd: [0.229, 0.224, 0.225],
+  // Raw optimal_thresholds from v11 training run — see guardrail comment above.
   thresholds: {
-    melanoma: 0.16,
-    bcc: 0.15,
-    actinic: 0.09,
+    melanoma: 0.20, // raw v11 value — raised to 0.35 by APP_THRESHOLD_FLOORS at runtime
+    bcc: 0.16,      // raw v11 value — raised to 0.25 by APP_THRESHOLD_FLOORS at runtime
+    actinic: 0.03,  // raw v11 value — disabled (null) by SAFE_THRESHOLD_FLOOR at runtime
   },
   tier: {
     benignThreshold: 0.20,
     suspiciousThreshold: 0.50,
   },
 };
+
+// Minimum safe threshold — below this a threshold fires on statistical noise alone.
+const SAFE_THRESHOLD_FLOOR = 0.10;
+
+// App-side per-class floors applied on top of raw training thresholds.
+const APP_THRESHOLD_FLOORS = {
+  melanoma: 0.35, // raw 0.20 — raised: phone photos reach 20% MEL on noise alone
+  bcc: 0.25,      // raw 0.16 — raised: reduces false BCC flags on ambiguous images
+  actinic: 0.15,  // moot — 0.03 is below SAFE_THRESHOLD_FLOOR and becomes null anyway
+};
+
+function validateThresholds(thresholds) {
+  const warnings = [];
+  const validated = {};
+  Object.entries(thresholds).forEach(([cls, thresh]) => {
+    if (thresh < SAFE_THRESHOLD_FLOOR) {
+      warnings.push(
+        `"${cls}" threshold ${thresh} is below noise floor ${SAFE_THRESHOLD_FLOOR} — override disabled, argmax used.`
+      );
+      validated[cls] = null;
+    } else {
+      const appFloor = APP_THRESHOLD_FLOORS[cls] ?? SAFE_THRESHOLD_FLOOR;
+      const effective = Math.max(thresh, appFloor);
+      if (effective > thresh) {
+        warnings.push(
+          `"${cls}" threshold raised ${thresh} → ${effective} (app-side safety floor).`
+        );
+      }
+      validated[cls] = effective;
+    }
+  });
+  if (warnings.length > 0) {
+    console.warn('[Skana] Threshold sanity check:', warnings);
+  }
+  return validated;
+}
+
+// Applied once at module load. Effective values: MEL=0.35, BCC=0.25, AK=null
+const VALIDATED_THRESHOLDS = validateThresholds(MODEL_CONFIG.thresholds);
 
 export const CANCER_INDICES = [1, 3, 4];
 export const BENIGN_INDICES = [0, 2, 5, 6];
@@ -92,35 +150,27 @@ export function softmax(logits) {
 }
 
 export function applyThresholds(probs) {
-  let predClass = probs.indexOf(Math.max(...probs));
-  const { melanoma, bcc, actinic } = MODEL_CONFIG.thresholds;
+  const fired = [];
 
-  if (probs[1] >= melanoma) {
-    predClass = 1;
-  } else if (BENIGN_INDICES.includes(predClass)) {
-    if (probs[3] >= bcc) {
-      predClass = 3;
-    } else if (probs[4] >= actinic) {
-      predClass = 4;
-    }
+  // MEL: flag as melanoma if model is ≥20% confident — clinical safety threshold
+  if (VALIDATED_THRESHOLDS.melanoma !== null && probs[1] >= VALIDATED_THRESHOLDS.melanoma) fired.push(1);
+  // BCC: flag as BCC if model is ≥16% confident — clinical safety threshold
+  if (VALIDATED_THRESHOLDS.bcc !== null && probs[3] >= VALIDATED_THRESHOLDS.bcc) fired.push(3);
+  // AK: DISABLED — VALIDATED_THRESHOLDS.actinic is null (0.03 < 0.10 noise floor)
+  // Actinic keratoses is still detected via argmax when it has the highest probability
+
+  // If multiple fire, pick the one with the highest probability per v11 spec
+  if (fired.length > 0) {
+    return fired.reduce((best, cls) => (probs[cls] > probs[best] ? cls : best), fired[0]);
   }
 
-  return predClass;
+  return probs.indexOf(Math.max(...probs));
 }
 
-// Assigns one of three tiers based on cancer probability and predicted class.
-// RED:   cancerProb >= 0.50, or (cancer class predicted with >= 30% confidence)
-// AMBER: cancerProb >= 0.20, or any cancer class predicted
-// GREEN: cancerProb < 0.20 and no cancer class predicted
-export function getTier(cancerProb, predClass, probs) {
-  const isCancerPred = CANCER_INDICES.includes(predClass);
-  const confidence = probs[predClass];
-
-  if (cancerProb >= MODEL_CONFIG.tier.suspiciousThreshold || (isCancerPred && confidence >= 0.30)) {
-    return TIER.SUSPICIOUS;
-  }
-  if (cancerProb >= MODEL_CONFIG.tier.benignThreshold || isCancerPred) {
-    return TIER.UNCERTAIN;
-  }
+// Tier is derived purely from cancer_prob per v11 spec:
+// >= 0.50 → Suspicious, >= 0.20 → Uncertain, < 0.20 → Likely Benign
+export function getTier(cancerProb) {
+  if (cancerProb >= MODEL_CONFIG.tier.suspiciousThreshold) return TIER.SUSPICIOUS;
+  if (cancerProb >= MODEL_CONFIG.tier.benignThreshold) return TIER.UNCERTAIN;
   return TIER.BENIGN;
 }

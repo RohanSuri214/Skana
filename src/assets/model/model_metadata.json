@@ -1,5 +1,5 @@
 {
-  "version": "v10",
+  "version": "v11",
   "model_name": "efficientnet_b2",
   "img_size": 260,
   "num_classes": 7,
@@ -23,13 +23,25 @@
     5,
     6
   ],
+  "temperature": 0.994372197054316,
+  "temperature_applied_in_model": true,
+  "output_is_probs": true,
   "optimal_thresholds": {
-    "1": 0.21000000000000005,
-    "3": 0.08000000000000002,
-    "4": 0.05
+    "1": 0.20000000000000004,
+    "3": 0.16000000000000003,
+    "4": 0.03
   },
-  "temperature": 0.8291184785792464,
+  "tier_thresholds": {
+    "suspicious": 0.5,
+    "uncertain": 0.2
+  },
+  "tier_names": [
+    "Likely Benign",
+    "Uncertain",
+    "Suspicious"
+  ],
   "metadata_dim": 21,
+  "metadata_layout": "age(1) | sex_onehot(3) | loc_onehot(15) | domain_onehot(2)",
   "sex_map": {
     "male": 0,
     "female": 1,
@@ -52,27 +64,44 @@
     "acral": 13,
     "unknown": 14
   },
-  "normalize_mean": [
-    0.485,
-    0.456,
-    0.406
-  ],
-  "normalize_std": [
-    0.229,
-    0.224,
-    0.225
-  ],
-  "three_tier": {
-    "benign_threshold": 0.2,
-    "suspicious_threshold": 0.5,
-    "tier_names": [
-      "Likely Benign",
-      "Uncertain",
-      "Suspicious"
-    ]
+  "domain_map": {
+    "dermoscopic": 0,
+    "clinical": 1
   },
-  "argmax_bal_acc": 0.6967316119637867,
-  "argmax_macro_f1": 0.6861270591427072,
-  "calibrated_bal_acc": 0.6967316119637867,
-  "tier_macro_f1": 0.5952574650264552
+  "default_domain": "clinical",
+  "preprocessing": {
+    "input_size": 260,
+    "resize_mode": "squash",
+    "channel_order": "RGB",
+    "normalize_mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "normalize_std": [
+      0.229,
+      0.224,
+      0.225
+    ],
+    "pixel_range_before_norm": [
+      0.0,
+      1.0
+    ],
+    "dtype": "float32"
+  },
+  "argmax_bal_acc": 0.6763286790087804,
+  "argmax_macro_f1": 0.6985981924793213,
+  "calibrated_macro_f1": 0.6985981924793213,
+  "tier_macro_f1": 0.6433315267174281,
+  "binary_auc": 0.9270667084774479,
+  "ece_before": 0.0260319672672174,
+  "ece_after": 0.024582784843739575,
+  "use_tta": true,
+  "training_datasets": [
+    "HAM10000",
+    "ISIC2019",
+    "Derm7pt",
+    "Fitzpatrick17k",
+    "Dermnet"
+  ]
 }

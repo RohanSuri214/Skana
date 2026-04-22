@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const HISTORY_KEY = 'dermascan_history';
+const HISTORY_KEY = 'skana_history';
 
 export async function getHistory() {
   try {

@@ -68,7 +68,7 @@ function MainTabs() {
 function LoadingScreen() {
   return (
     <View style={styles.loading}>
-      <Text style={styles.loadingLogo}>DermaScan</Text>
+      <Text style={styles.loadingLogo}>Skana</Text>
       <ActivityIndicator size="large" color={Theme.accent} style={{ marginTop: 24 }} />
       <Text style={styles.loadingText}>Loading AI model...</Text>
     </View>

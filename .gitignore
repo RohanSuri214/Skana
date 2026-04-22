@@ -1,0 +1,53 @@
+# macOS
+.DS_Store
+
+# Node / Expo
+node_modules/
+.expo/
+.expo-export*/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# React Native / Metro
+*.jsbundle
+
+# Native build artifacts
+Podfile.backup
+ios/build/
+ios/Pods/
+ios/DerivedData/
+ios/*.xcuserstate
+ios/xcuserdata/
+ios/.xcode.env.local
+android/build/
+android/app/build/
+android/.gradle/
+android/.kotlin/
+android/app/.cxx/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv-*/
+venv/
+server/venv/
+
+# Local editor / assistant state
+.vscode/
+.idea/
+.claude/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Generated model/data artifacts
+*.onnx
+*.ckpt
+*.pth
+*.pt
+*.ptl
+!src/assets/model/skin_cancer_v11.ptl

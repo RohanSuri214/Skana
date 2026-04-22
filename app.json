@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "DermaScan",
-    "slug": "dermascan",
+    "name": "Skana",
+    "slug": "skana",
     "version": "1.0.0",
     "newArchEnabled": false,
     "orientation": "portrait",
@@ -14,17 +14,17 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.dermascan.app",
+      "bundleIdentifier": "com.skana.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "DermaScan needs camera access to photograph skin lesions for AI screening.",
-        "NSPhotoLibraryUsageDescription": "DermaScan needs photo access to analyze existing images of skin lesions."
+        "NSCameraUsageDescription": "Skana needs camera access to photograph skin lesions for AI screening.",
+        "NSPhotoLibraryUsageDescription": "Skana needs photo access to analyze existing images of skin lesions."
       }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0D1B2A"
       },
-      "package": "com.dermascan.app",
+      "package": "com.skana.app",
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE"

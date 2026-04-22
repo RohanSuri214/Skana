@@ -5,10 +5,7 @@ require 'json'
 podfile_properties = JSON.parse(File.read(File.join(__dir__, 'Podfile.properties.json'))) rescue {}
 
 def ccache_enabled?(podfile_properties)
-  # Environment variable takes precedence
   return ENV['USE_CCACHE'] == '1' if ENV['USE_CCACHE']
-  
-  # Fall back to Podfile properties
   podfile_properties['apple.ccacheEnabled'] == 'true'
 end
 
@@ -35,7 +32,13 @@ target 'DermaScan' do
       'react-native-config',
       '--json',
       '--platform',
-      'ios'
+      'ios',
+      # react-native-pytorch-core bundles LibTorch-Lite 1.12.0 which has no
+      # arm64-simulator slice. iOS 26+ simulators require arm64. Excluding
+      # the library here lets the app build as arm64 and run on the simulator
+      # in mock-inference mode (model.js handles the missing module gracefully).
+      # Remove this line when building for a real device.
+      '--exclude', 'react-native-pytorch-core'
     ]
   end
 
@@ -47,7 +50,6 @@ target 'DermaScan' do
   use_react_native!(
     :path => config[:reactNativePath],
     :hermes_enabled => podfile_properties['expo.jsEngine'] == nil || podfile_properties['expo.jsEngine'] == 'hermes',
-    # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/..",
     :privacy_file_aggregation_enabled => podfile_properties['apple.privacyManifestAggregationEnabled'] != 'false',
   )
@@ -60,28 +62,43 @@ target 'DermaScan' do
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
 
-    # LibTorch-Lite 1.12.0 only ships an iOS-device arm64 slice — it has no
-    # arm64-simulator slice. On Apple Silicon Macs, simulator builds target
-    # arm64 by default, which causes a linker error. Excluding arm64 from
-    # simulator builds forces Rosetta/x86_64, which LibTorch-Lite does support.
-    installer.pods_project.build_configurations.each do |config|
-      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
-    end
+    # Xcode 26's C++20 default breaks fmt. Force C++17 for it.
     installer.pods_project.targets.each do |target|
-      target.build_configurations.each do |config|
-        config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
-      end
-    end
-
-    # LibTorch-Lite headers use std::result_of which was removed in C++20.
-    # Force C++17 for react-native-pytorch-core and LibTorch-Lite to fix
-    # compilation errors on Xcode 26+ (Clang defaults to C++20).
-    installer.pods_project.targets.each do |target|
-      if ['react-native-pytorch-core', 'LibTorch-Lite'].include?(target.name)
+      if ['fmt'].include?(target.name)
         target.build_configurations.each do |config|
           config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
         end
       end
+    end
+
+    # Xcode 26's explicit Swift module scanning is brittle with this pod graph.
+    installer.pods_project.build_configurations.each do |config|
+      config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
+    end
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
+      end
+    end
+
+    installer.aggregate_targets.each do |aggregate_target|
+      aggregate_target.user_project.build_configurations.each do |config|
+        config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
+        config.build_settings['LIBRARY_SEARCH_PATHS'] = [
+          '$(SDKROOT)/usr/lib/swift',
+          '$(inherited)',
+        ]
+      end
+      aggregate_target.user_project.native_targets.each do |target|
+        target.build_configurations.each do |config|
+          config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
+          config.build_settings['LIBRARY_SEARCH_PATHS'] = [
+            '$(SDKROOT)/usr/lib/swift',
+            '$(inherited)',
+          ]
+        end
+      end
+      aggregate_target.user_project.save
     end
   end
 end

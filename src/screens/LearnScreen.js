@@ -129,20 +129,20 @@ export default function LearnScreen() {
       <View style={styles.aboutCard}>
         <Text style={styles.aboutTitle}>About Our AI Model</Text>
         <Text style={styles.aboutText}>
-          DermaScan v10 uses an EfficientNet-B2 model trained on 27,758 clinical and dermoscopic images. It incorporates patient metadata (age, sex, body location) and uses a three-tier result system: Likely Benign, Uncertain, and Suspicious.
+          Skana v11 uses an EfficientNet-B2 model for seven-class lesion screening. It incorporates patient metadata (age, sex, body location) and uses a three-tier result system: Likely Benign, Uncertain, and Suspicious.
         </Text>
         <View style={styles.aboutStats}>
           <View style={styles.aboutStat}>
-            <Text style={styles.aboutStatValue}>0.92</Text>
+            <Text style={styles.aboutStatValue}>0.927</Text>
             <Text style={styles.aboutStatLabel}>Binary AUC</Text>
           </View>
           <View style={styles.aboutStat}>
-            <Text style={styles.aboutStatValue}>0.71</Text>
+            <Text style={styles.aboutStatValue}>0.699</Text>
             <Text style={styles.aboutStatLabel}>Macro F1</Text>
           </View>
           <View style={styles.aboutStat}>
-            <Text style={styles.aboutStatValue}>27.7K</Text>
-            <Text style={styles.aboutStatLabel}>Training Images</Text>
+            <Text style={styles.aboutStatValue}>7</Text>
+            <Text style={styles.aboutStatLabel}>Classes</Text>
           </View>
         </View>
       </View>

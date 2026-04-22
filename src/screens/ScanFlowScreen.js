@@ -13,12 +13,13 @@ import {
   Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Theme from '../utils/theme';
 import { CLASS_INFO, TIER, TIER_NAMES, TIER_COLORS, TIER_BG_COLORS } from '../utils/classInfo';
 import { predict } from '../utils/model';
 import { addScan } from '../utils/storage';
 
-const PHASES = { PICK: 0, DETAILS: 1, ANALYZING: 2, RESULT: 3 };
+const PHASES = { PICK: 0, DETAILS: 1, ANALYZING: 2, RESULT: 3, ERROR: 4 };
 
 const LOCATIONS = [
   { key: 'face', label: 'Face' },
@@ -46,10 +47,12 @@ const TIER_MESSAGES = [
 const TIER_BADGE_LABELS = ['OK', '?', 'FLAG'];
 
 export default function ScanFlowScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const [phase, setPhase] = useState(PHASES.PICK);
   const [imageUri, setImageUri] = useState(null);
   const [result, setResult] = useState(null);
   const [scanStep, setScanStep] = useState(0);
+  const [scanError, setScanError] = useState(null);
 
   // Patient details state
   const [ageText, setAgeText] = useState('');
@@ -84,6 +87,10 @@ export default function ScanFlowScreen({ navigation }) {
   };
 
   const analyzeImage = async (uri, patientData) => {
+    if (!uri) {
+      Alert.alert('Error', 'No image selected.');
+      return;
+    }
     setPhase(PHASES.ANALYZING);
     setScanStep(0);
 
@@ -94,22 +101,26 @@ export default function ScanFlowScreen({ navigation }) {
       const prediction = await predict(uri, patientData);
       setResult(prediction);
 
-      await addScan({
-        imageUri: uri,
-        diagnosis: prediction.diagnosis,
-        confidence: prediction.confidence,
-        isSuspicious: prediction.isSuspicious,
-        cancerProbability: prediction.cancerProbability,
-        tier: prediction.tier,
-        tierName: prediction.tierName,
-        metadata: patientData,
-      });
+      // Don't save OOD (invalid scan) results to history
+      if (!prediction.isOOD) {
+        await addScan({
+          imageUri: uri,
+          diagnosis: prediction.diagnosis,
+          confidence: prediction.confidence,
+          isSuspicious: prediction.isSuspicious,
+          cancerProbability: prediction.cancerProbability,
+          tier: prediction.tier,
+          tierName: prediction.tierName,
+          allProbabilities: prediction.allProbabilities,
+          metadata: patientData,
+        });
+      }
 
       setPhase(PHASES.RESULT);
     } catch (error) {
       console.error('Scan error:', error);
-      Alert.alert('Error', 'Failed to analyze the image. Please try again.');
-      setPhase(PHASES.PICK);
+      setScanError(error.message || 'Unknown inference error');
+      setPhase(PHASES.ERROR);
     } finally {
       clearTimeout(timerOne);
       clearTimeout(timerTwo);
@@ -123,7 +134,7 @@ export default function ScanFlowScreen({ navigation }) {
   const handleContinue = () => {
     const age = ageText.trim() !== '' ? parseInt(ageText, 10) : null;
     const patientData = {
-      age: age != null && age >= 0 && age <= 120 ? age : null,
+      age: age != null && age >= 0 && age <= 100 ? age : null,
       sex: sex ?? 'unknown',
       location: location ?? 'unknown',
     };
@@ -138,15 +149,16 @@ export default function ScanFlowScreen({ navigation }) {
     setAgeText('');
     setSex(null);
     setLocation(null);
+    setScanError(null);
   };
 
   // ── PICK phase ────────────────────────────────────────────────────────────
   if (phase === PHASES.PICK) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.backBtn}>Back</Text>
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtnHitArea}>
+            <Text style={styles.backBtn}>← Back</Text>
           </TouchableOpacity>
         </View>
 
@@ -205,9 +217,9 @@ export default function ScanFlowScreen({ navigation }) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.detailsContent}>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={resetScan}>
-              <Text style={styles.backBtn}>Back</Text>
+          <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+            <TouchableOpacity onPress={resetScan} style={styles.backBtnHitArea}>
+              <Text style={styles.backBtn}>← Back</Text>
             </TouchableOpacity>
           </View>
 
@@ -222,7 +234,7 @@ export default function ScanFlowScreen({ navigation }) {
           <Text style={styles.fieldLabel}>AGE</Text>
           <TextInput
             style={styles.ageInput}
-            placeholder="Enter age (0–120)"
+            placeholder="Enter age (0–100)"
             placeholderTextColor={Theme.textMuted}
             keyboardType="number-pad"
             maxLength={3}
@@ -302,14 +314,46 @@ export default function ScanFlowScreen({ navigation }) {
 
   // ── RESULT phase ──────────────────────────────────────────────────────────
   if (phase === PHASES.RESULT && result) {
+
+    // OOD gate — show rejection screen before any diagnosis rendering
+    if (result.isOOD) {
+      return (
+        <View style={[styles.container, styles.centerContent]}>
+          <View style={[styles.header, { paddingTop: insets.top + 8, position: 'absolute', top: 0, left: 0, right: 0 }]}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtnHitArea}>
+              <Text style={styles.backBtn}>← Back</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.oodBadge}>
+            <Text style={styles.oodBadgeText}>?</Text>
+          </View>
+          <Text style={styles.oodTitle}>Unable to analyse</Text>
+          <Text style={styles.oodBody}>
+            This image doesn't appear to be a close-up skin lesion. For accurate results, please photograph the lesion directly with good lighting, filling most of the frame.
+          </Text>
+          <TouchableOpacity style={styles.oodBtn} onPress={resetScan} activeOpacity={0.85}>
+            <Text style={styles.oodBtnText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // Confidence floor — hide class name when model has no dominant signal.
+    // Exception: always show the diagnosis when tier is Suspicious — hiding it
+    // while the verdict card says "Suspicious" creates a contradictory screen.
+    const DISPLAY_CONFIDENCE_FLOOR = 35; // percent; result.confidence is 0–100
+    const belowFloor = result.confidence < DISPLAY_CONFIDENCE_FLOOR && result.tier !== TIER.SUSPICIOUS;
+    const displayDiagnosis = belowFloor ? 'Uncertain scan' : result.diagnosis;
+    const showLowConfidenceNote = belowFloor;
+
     const info = CLASS_INFO[result.diagnosis];
     const tierColor = TIER_COLORS[result.tier];
     const tierBgColor = TIER_BG_COLORS[result.tier];
     const tierBadge = TIER_BADGE_LABELS[result.tier];
 
     return (
-      <ScrollView style={styles.container} contentContainerStyle={{ padding: Theme.paddingH, paddingBottom: 40 }}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+      <ScrollView style={styles.container} contentContainerStyle={{ padding: Theme.paddingH, paddingTop: insets.top + 8, paddingBottom: 40 }}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtnHitArea}>
           <Text style={styles.backBtn}>Done</Text>
         </TouchableOpacity>
 
@@ -329,16 +373,26 @@ export default function ScanFlowScreen({ navigation }) {
           <Text style={styles.cardLabel}>DIAGNOSIS</Text>
           <View style={styles.diagRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.diagName}>{result.diagnosis}</Text>
-              <Text style={[styles.diagRisk, { color: info?.color }]}>{info?.risk}</Text>
+              <Text style={styles.diagName}>{displayDiagnosis}</Text>
+              {!showLowConfidenceNote && (
+                <Text style={[styles.diagRisk, { color: info?.color }]}>{info?.risk}</Text>
+              )}
             </View>
             <View style={[styles.confBadge, { backgroundColor: tierBgColor }]}>
               <Text style={[styles.confText, { color: tierColor }]}>
-                {result.confidence}%
+                {showLowConfidenceNote ? '—' : `${result.confidence}%`}
               </Text>
             </View>
           </View>
-          <Text style={styles.diagDesc}>{info?.description}</Text>
+          {showLowConfidenceNote ? (
+            <View style={styles.lowConfNote}>
+              <Text style={styles.lowConfNoteText}>
+                The model could not identify this lesion with sufficient confidence. Please consult a dermatologist.
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.diagDesc}>{info?.description}</Text>
+          )}
         </View>
 
         {/* Classification breakdown */}
@@ -392,14 +446,43 @@ export default function ScanFlowScreen({ navigation }) {
     );
   }
 
+  // ── ERROR phase ───────────────────────────────────────────────────────────
+  if (phase === PHASES.ERROR) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <View style={[styles.header, { paddingTop: insets.top + 8, position: 'absolute', top: 0, left: 0, right: 0 }]}>
+          <TouchableOpacity onPress={resetScan} style={styles.backBtnHitArea}>
+            <Text style={styles.backBtn}>← Back</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.errorBadge}>
+          <Text style={styles.errorBadgeText}>!</Text>
+        </View>
+        <Text style={styles.errorTitle}>Scan Failed</Text>
+        <Text style={styles.errorBody}>
+          The model could not process this image. This is likely a technical issue, not the image itself.
+        </Text>
+        {scanError && (
+          <View style={styles.errorDetail}>
+            <Text style={styles.errorDetailText}>{scanError}</Text>
+          </View>
+        )}
+        <TouchableOpacity style={styles.oodBtn} onPress={resetScan} activeOpacity={0.85}>
+          <Text style={styles.oodBtnText}>Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return null;
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.bg },
   centerContent: { alignItems: 'center', justifyContent: 'center' },
-  header: { padding: Theme.paddingH, paddingTop: 12 },
-  backBtn: { fontSize: 15, color: Theme.accent, fontWeight: '500' },
+  header: { padding: Theme.paddingH },
+  backBtn: { fontSize: 20, color: Theme.accent, fontWeight: '600' },
+  backBtnHitArea: { padding: 12, marginLeft: -12 },
 
   // PICK
   pickContent: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },
@@ -538,5 +621,45 @@ const styles = StyleSheet.create({
   ctaTitle: { fontSize: 16, fontWeight: '700', color: Theme.text },
   ctaDesc: { fontSize: 12, color: Theme.textSecondary, marginTop: 2 },
   newScanBtn: { backgroundColor: Theme.accent, borderRadius: 16, padding: 16, alignItems: 'center' },
+
+  // OOD rejection screen
+  oodBadge: {
+    width: 80, height: 80, borderRadius: 24,
+    backgroundColor: Theme.bgCardLight, alignItems: 'center', justifyContent: 'center',
+    marginBottom: 24, borderWidth: 1, borderColor: Theme.border,
+  },
+  oodBadgeText: { fontSize: 32, color: Theme.textSecondary, fontWeight: '800' },
+  oodTitle: { fontSize: 24, fontWeight: '800', color: Theme.text, textAlign: 'center', marginBottom: 12 },
+  oodBody: {
+    fontSize: 15, color: Theme.textSecondary, textAlign: 'center',
+    lineHeight: 22, marginBottom: 40, maxWidth: 300,
+  },
+  oodBtn: { backgroundColor: Theme.accent, borderRadius: 16, paddingVertical: 16, paddingHorizontal: 40 },
+  oodBtnText: { color: Theme.text, fontSize: 16, fontWeight: '700' },
+
+  // Low-confidence diagnosis note
+  lowConfNote: {
+    backgroundColor: Theme.bgCardLight, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: Theme.border, marginTop: 4,
+  },
+  lowConfNoteText: { fontSize: 13, color: Theme.textSecondary, lineHeight: 19 },
   newScanText: { color: Theme.text, fontSize: 16, fontWeight: '700' },
+
+  // ERROR phase
+  errorBadge: {
+    width: 80, height: 80, borderRadius: 24,
+    backgroundColor: Theme.suspiciousBg, alignItems: 'center', justifyContent: 'center',
+    marginBottom: 24, borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)',
+  },
+  errorBadgeText: { fontSize: 36, color: Theme.suspicious, fontWeight: '800' },
+  errorTitle: { fontSize: 24, fontWeight: '800', color: Theme.text, textAlign: 'center', marginBottom: 12 },
+  errorBody: {
+    fontSize: 15, color: Theme.textSecondary, textAlign: 'center',
+    lineHeight: 22, marginBottom: 16, maxWidth: 300,
+  },
+  errorDetail: {
+    backgroundColor: Theme.bgCard, borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: Theme.border, marginBottom: 32, maxWidth: 300,
+  },
+  errorDetailText: { fontSize: 12, color: Theme.textMuted, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
 });

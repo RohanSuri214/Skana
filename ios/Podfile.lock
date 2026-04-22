@@ -91,11 +91,6 @@ PODS:
   - hermes-engine (0.81.5):
     - hermes-engine/Pre-built (= 0.81.5)
   - hermes-engine/Pre-built (0.81.5)
-  - LibTorch-Lite (1.12.0):
-    - LibTorch-Lite/Core (= 1.12.0)
-  - LibTorch-Lite/Core (1.12.0):
-    - LibTorch-Lite/Torch
-  - LibTorch-Lite/Torch (1.12.0)
   - libwebp (1.5.0):
     - libwebp/demux (= 1.5.0)
     - libwebp/mux (= 1.5.0)
@@ -1848,11 +1843,6 @@ PODS:
     - React-RCTFBReactNativeSpec
     - ReactCommon/turbomodule/core
     - SocketRocket
-  - react-native-pytorch-core (0.2.4):
-    - LibTorch-Lite (~> 1.12.0)
-    - React
-    - React-callinvoker
-    - React-Core
   - react-native-safe-area-context (5.6.2):
     - React-Core
   - React-NativeModulesApple (0.81.5):
@@ -2456,7 +2446,6 @@ DEPENDENCIES:
   - React-logger (from `../node_modules/react-native/ReactCommon/logger`)
   - React-Mapbuffer (from `../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
-  - react-native-pytorch-core (from `../node_modules/react-native-pytorch-core`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-oscompat (from `../node_modules/react-native/ReactCommon/oscompat`)
@@ -2495,7 +2484,6 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
-    - LibTorch-Lite
     - libwebp
     - SDWebImage
     - SDWebImageWebPCoder
@@ -2606,8 +2594,6 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   React-microtasksnativemodule:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
-  react-native-pytorch-core:
-    :path: "../node_modules/react-native-pytorch-core"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
   React-NativeModulesApple:
@@ -2696,7 +2682,6 @@ SPEC CHECKSUMS:
   fmt: a40bb5bd0294ea969aaaba240a927bd33d878cdd
   glog: 5683914934d5b6e4240e497e0f4a3b42d1854183
   hermes-engine: 9f4dfe93326146a1c99eb535b1cb0b857a3cd172
-  LibTorch-Lite: c2210be0ed41c3a7f972c82715663a44d35ad97c
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
   RCT-Folly: 846fda9475e61ec7bcbf8a3fe81edfcaeb090669
   RCTDeprecation: 5eb1d2eeff5fb91151e8a8eef45b6c7658b6c897
@@ -2731,7 +2716,6 @@ SPEC CHECKSUMS:
   React-logger: a913317214a26565cd4c045347edf1bcacb80a3f
   React-Mapbuffer: 94f4264de2cb156960cd82b338a403f4653f2fd9
   React-microtasksnativemodule: 6c4ee39a36958c39c97b074d28f360246a335e84
-  react-native-pytorch-core: 327e0554950e374e1ecd019c799ad48de0e8bbe8
   react-native-safe-area-context: 6c8805194166a9d6b3e53ba69ca76756c9bfb052
   React-NativeModulesApple: ebf2ce72b35870036900d6498b33724386540a71
   React-oscompat: eb0626e8ba1a2c61673c991bf9dc21834898475d
@@ -2771,6 +2755,6 @@ SPEC CHECKSUMS:
   Yoga: 728df40394d49f3f471688747cf558158b3a3bd1
   ZXingObjC: 8898711ab495761b2dbbdec76d90164a6d7e14c5
 
-PODFILE CHECKSUM: 39c99c5f11ce8da755fdd9bc45e1f14fb2067814
+PODFILE CHECKSUM: ec686a1b2c7144b34194ccff9b4290456a0edb00
 
 COCOAPODS: 1.16.2

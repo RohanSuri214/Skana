@@ -1,92 +1,222 @@
-# DermaScan — AI Skin Lesion Screening App
+# Skana: AI Skin Lesion Screening App
 
-A cross-platform mobile app that uses a deep learning model (EfficientNet-B2) to screen skin lesions across 7 classification types.
+Skana is a cross-platform React Native/Expo mobile app for educational skin lesion screening. The app lets a user capture or upload a lesion image, optionally provide patient metadata, run a PyTorch Mobile model, and view a three-tier screening result: `Likely Benign`, `Uncertain`, or `Suspicious`.
 
-## Features
+> Skana is not a medical device and does not provide diagnosis. It is intended for education, prototyping, and ML/mobile engineering demonstration only. A qualified clinician should evaluate concerning or changing lesions.
 
-- **Camera & Gallery** — Take a photo or pick from your library
-- **AI Screening** — EfficientNet-B2 model trained on 22,000+ dermoscopic images
-- **7-Class Classification** — Melanoma, BCC, Actinic keratoses, Nevi, BKL, Vascular, Dermatofibroma
-- **Per-Class Thresholds** — Optimized cancer detection with adjustable sensitivity
-- **Scan History** — Track all past scans with results
-- **Educational Content** — Learn about each skin lesion type
-- **Dark Medical Theme** — Premium clinical aesthetic
+## Overview
 
-## Quick Start
+This repository contains:
 
-### 1. Install dependencies
+- A React Native mobile app with Home, Scan, History, and Learn screens.
+- A bundled TorchScript Lite model at `src/assets/model/skin_cancer_v11.ptl`.
+- Model metadata at `src/assets/model/model_metadata.json`.
+- A development-only FastAPI inference server for environments where the native PyTorch Mobile module is unavailable, especially the iOS simulator on Apple Silicon.
+
+## Problem Statement
+
+Skin lesion assessment is visually complex and high stakes. Skana explores how a mobile app can package a computer vision model into a guided screening workflow while being explicit about uncertainty, limitations, and the need for medical follow-up.
+
+The ML task is multi-class image classification over seven lesion categories, plus aggregate cancer-risk tiering.
+
+## What We Built
+
+- Camera and image-library scan flow using Expo image picker APIs.
+- Optional metadata collection for age, biological sex, and lesion body location.
+- On-device inference through `react-native-pytorch-core` when supported.
+- Local API inference fallback through `server/inference_server.py` for development.
+- Scan history using AsyncStorage.
+- Educational reference pages for each modeled lesion class.
+- Runtime guardrails for low-confidence or out-of-distribution-looking predictions.
+
+## ML / AI Approach
+
+The repository includes model version `v11`, described by `model_metadata.json` as an `efficientnet_b2` image model.
+
+### Inputs
+
+The model takes two inputs:
+
+1. Image tensor: `[1, 3, 260, 260]`
+2. Metadata tensor: `[1, 21]`
+
+The metadata layout is:
+
+```text
+age(1) | sex_onehot(3) | location_onehot(15) | domain_onehot(2)
+```
+
+Unknown values are handled explicitly. Age defaults to `0.5`, sex defaults to `unknown`, location defaults to `unknown`, and app-based scans default to the `clinical` image domain.
+
+### Preprocessing
+
+Both the mobile inference path and local server use:
+
+- RGB conversion
+- resize to `260 x 260`
+- pixel scaling to `[0, 1]`
+- ImageNet normalization with mean `[0.485, 0.456, 0.406]`
+- ImageNet normalization with standard deviation `[0.229, 0.224, 0.225]`
+
+### Outputs
+
+The TorchScript model returns a tuple:
+
+```text
+(probs [1, 7], cancer_prob [1, 1])
+```
+
+`probs` is already softmaxed and temperature-calibrated, so the app does not apply softmax again. `cancer_prob` is used for the three-tier result:
+
+- `< 0.20`: Likely Benign
+- `>= 0.20` and `< 0.50`: Uncertain
+- `>= 0.50`: Suspicious
+
+The seven output classes are:
+
+1. Melanocytic nevi
+2. Melanoma
+3. Benign keratosis
+4. Basal cell carcinoma
+5. Actinic keratoses
+6. Vascular lesions
+7. Dermatofibroma
+
+Cancer or pre-cancer indices are melanoma, basal cell carcinoma, and actinic keratoses.
+
+### Reported Model Metadata
+
+The checked-in metadata reports:
+
+- Binary AUC: `0.9271`
+- Argmax balanced accuracy: `0.6763`
+- Argmax macro F1: `0.6986`
+- Tier macro F1: `0.6433`
+- Expected calibration error before temperature scaling: `0.0260`
+- Expected calibration error after temperature scaling: `0.0246`
+
+These values come from `src/assets/model/model_metadata.json`. The repository currently does not include the training notebook, split definition, evaluation script, or raw evaluation outputs needed to independently reproduce them.
+
+## Repository Structure
+
+```text
+.
+├── App.js                              # App root, navigation, model loading
+├── app.json                            # Expo configuration
+├── package.json                        # React Native / Expo dependencies and scripts
+├── android/                            # Native Android project generated by Expo prebuild
+├── ios/                                # Native iOS project generated by Expo prebuild
+├── server/
+│   ├── inference_server.py             # Dev-only FastAPI inference endpoint
+│   └── requirements.txt                # Python server dependencies
+└── src/
+    ├── assets/model/
+    │   ├── skin_cancer_v11.ptl         # TorchScript Lite model
+    │   └── model_metadata.json         # Model config, classes, metrics, preprocessing
+    ├── screens/
+    │   ├── HomeScreen.js
+    │   ├── ScanFlowScreen.js
+    │   ├── HistoryScreen.js
+    │   └── LearnScreen.js
+    └── utils/
+        ├── model.js                    # Model loading, preprocessing, inference, OOD guards
+        ├── classInfo.js                # Class labels, thresholds, result tiering
+        ├── storage.js                  # AsyncStorage scan history
+        └── theme.js                    # App theme tokens
+```
+
+## Installation
+
+Install JavaScript dependencies:
 
 ```bash
-cd DermaScan
 npm install
 ```
 
-### 2. Add your model file
+For iOS native builds, install CocoaPods dependencies from the `ios` directory:
 
-Download `skin_cancer_v8.ptl` from your Kaggle notebook output and place it in:
-```
-DermaScan/src/assets/model/skin_cancer_v8.ptl
-```
-
-**Without the model file, the app runs in Demo Mode with simulated predictions.**
-
-### 3. Run the app
-
-**For development (Expo Go — no model inference, demo mode only):**
 ```bash
-npx expo start
+cd ios
+pod install
+cd ..
 ```
 
-**For full functionality with PyTorch Mobile (requires native build):**
+For the optional local inference server:
+
 ```bash
-npx expo prebuild
-npx expo run:ios      # iOS
-npx expo run:android  # Android
+python -m venv server/venv
+source server/venv/bin/activate
+pip install -r server/requirements.txt
 ```
 
-## Project Structure
+## Usage
 
-```
-DermaScan/
-├── App.js                          # Root: navigation + model loading
-├── app.json                        # Expo configuration
-├── package.json                    # Dependencies
-├── src/
-│   ├── screens/
-│   │   ├── HomeScreen.js           # Dashboard with stats + recent scans
-│   │   ├── ScanFlowScreen.js       # Camera/gallery → analyzing → results
-│   │   ├── HistoryScreen.js        # Past scans with filters
-│   │   └── LearnScreen.js          # Educational content on 7 classes
-│   ├── utils/
-│   │   ├── theme.js                # Dark medical color scheme
-│   │   ├── classInfo.js            # Class names, thresholds, softmax
-│   │   ├── model.js                # PyTorch Mobile inference + mock
-│   │   └── storage.js              # AsyncStorage for scan history
-│   └── assets/
-│       └── model/
-│           └── skin_cancer_v8.ptl  # YOUR MODEL FILE (download from Kaggle)
+Start the Expo development server:
+
+```bash
+npm start
 ```
 
-## Model Details
+Run native builds:
 
-- **Architecture:** EfficientNet-B2 (9.1M parameters)
-- **Input:** 260×260 RGB images
-- **Output:** 7-class probabilities
-- **Normalization:** ImageNet mean/std
-- **Thresholds:** MEL=0.14, BCC=0.07, AK=0.06
-- **Training data:** HAM10000 + ISIC 2019 (22,099 images)
-- **Binary AUC:** 0.90
-- **Clinical catch rate:** 95.9% (with thresholds)
+```bash
+npm run ios
+npm run android
+```
 
-## How Inference Works
+Start the local inference server for simulator development:
 
-1. User captures/uploads image
-2. Image resized to 260×260 and normalized
-3. EfficientNet-B2 outputs 7 logits
-4. Softmax converts to probabilities
-5. Per-class thresholds applied (melanoma priority)
-6. Result displayed with screening verdict
+```bash
+cd server
+uvicorn inference_server:app --host 127.0.0.1 --port 8000 --reload
+```
 
-## Important Disclaimer
+The app attempts inference in this order:
 
-This app is for **educational and screening purposes only**. It is NOT a medical device and does NOT provide medical diagnosis. Always consult a qualified dermatologist for proper evaluation of skin lesions.
+1. Load `src/assets/model/skin_cancer_v11.ptl` through `react-native-pytorch-core`.
+2. If the native PyTorch module is unavailable, call the local FastAPI server.
+3. If neither is available, fall back to demo/mock predictions.
+
+## Model Pipeline
+
+1. User takes a photo or selects an image.
+2. User optionally enters age, sex, and lesion location.
+3. Image is resized and normalized.
+4. Metadata is converted into a 21-value tensor.
+5. The EfficientNet-B2 TorchScript model returns calibrated class probabilities and aggregate cancer probability.
+6. App-side thresholds and tier logic convert model outputs into a user-facing screening result.
+7. High-entropy or low-top-confidence outputs are flagged as out-of-distribution and are not saved to history.
+
+## Results / Output
+
+Each scan result includes:
+
+- predicted lesion class
+- confidence for the selected class
+- aggregate cancer probability
+- tier label: `Likely Benign`, `Uncertain`, or `Suspicious`
+- sorted probabilities for all seven classes
+
+The history screen stores non-OOD scan summaries locally on the device using AsyncStorage.
+
+## Limitations
+
+- The repository does not include training code, notebooks, data loaders, or exact train/validation/test split files.
+- The included model metrics cannot be reproduced from this repository alone.
+- The app uses runtime guardrails, but out-of-distribution detection is heuristic.
+- Phone photos can differ substantially from dermoscopic training images.
+- Medical use would require clinical validation, regulatory review, privacy/security work, and clinician oversight.
+
+## Future Work
+
+- Add the training notebook or script that produced `skin_cancer_v11.ptl`.
+- Add a reproducible evaluation script that reads a held-out manifest and reports the metrics in `model_metadata.json`.
+- Add example scan screenshots or a short demo GIF.
+- Add automated tests for metadata tensor construction, threshold logic, and result tiering.
+- Add model-card documentation covering datasets, class balance, intended use, limitations, and fairness considerations.
+- Replace demo-mode randomness with deterministic sample fixtures for screenshots and testing.
+
+## Contributors
+
+- Rohan
+

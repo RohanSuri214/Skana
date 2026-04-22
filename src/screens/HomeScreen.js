@@ -47,7 +47,7 @@ export default function HomeScreen({ navigation }) {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Theme.accent} />}
     >
       <Text style={styles.welcome}>Welcome to</Text>
-      <Text style={styles.title}>DermaScan</Text>
+      <Text style={styles.title}>Skana</Text>
       <Text style={styles.subtitle}>AI-powered skin lesion screening</Text>
 
       {status.mock && (

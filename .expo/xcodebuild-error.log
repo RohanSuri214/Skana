@@ -1,7 +1,0 @@
-** BUILD FAILED **
-
-
-The following build commands failed:
-	Ld /Users/rohansuri/Library/Developer/Xcode/DerivedData/DermaScan-fljhfwcrvbhvykgurjxcbojxfbdr/Build/Products/Debug-iphonesimulator/DermaScan.app/DermaScan.debug.dylib normal (in target 'DermaScan' from project 'DermaScan')
-	Building workspace DermaScan with scheme DermaScan and configuration Debug
-(2 failures)
