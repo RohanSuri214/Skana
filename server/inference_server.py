@@ -1,12 +1,12 @@
 """
 Skana local inference server — dev-only, for iOS simulator.
 
-Loads the skin_cancer_v11.ptl TorchScript model and exposes a single
+Loads the skin_cancer_v15.ptl TorchScript model and exposes a single
 POST /predict endpoint. The iOS simulator (running on this Mac) calls
 http://127.0.0.1:8000/predict instead of the react-native-pytorch-core
 native module, which cannot build for the arm64 simulator target.
 
-v11 model returns a TUPLE: (probs [1,7], cancer_prob [1,1])
+v15 model returns a TUPLE: (probs [1,7], cancer_prob [1,1])
   - probs is already softmaxed and calibrated — do NOT apply softmax again
   - cancer_prob is the model's calibrated aggregate cancer probability
 
@@ -27,7 +27,7 @@ from pydantic import BaseModel
 
 MODEL_PATH = os.path.join(
     os.path.dirname(__file__),
-    "../src/assets/model/skin_cancer_v11.ptl",
+    "../src/assets/model/skin_cancer_v15.ptl",
 )
 IMG_SIZE = 260
 NORM_MEAN = [0.485, 0.456, 0.406]
@@ -52,7 +52,7 @@ def _load_model():
         raise RuntimeError(f"Model not found at {path}")
     _model = torch.jit.load(path, map_location="cpu")
     _model.eval()
-    print(f"[Skana] Model v11 loaded from {path}")
+    print(f"[Skana] Model v15 loaded from {path}")
 
 
 class PredictRequest(BaseModel):
@@ -93,7 +93,7 @@ def predict(req: PredictRequest):
     meta_tensor = torch.tensor([req.metadata], dtype=torch.float32)  # [1, 21]
 
     # --- run inference ---
-    # v11 returns tuple: (probs [1,7], cancer_prob [1,1]) — already calibrated, no softmax
+    # v15 returns tuple: (probs [1,7], cancer_prob [1,1]) — already calibrated, no softmax
     with torch.no_grad():
         probs_tensor, cancer_prob_tensor = _model.forward(img_tensor, meta_tensor)
 

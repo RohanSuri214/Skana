@@ -44,10 +44,10 @@ server/venv/
 .env.*
 !.env.example
 
-# Generated model/data artifacts
+# Generated model/data artifacts — model files are too large for git
+# Place skin_cancer_v15.ptl in src/assets/model/ manually (see README)
 *.onnx
 *.ckpt
 *.pth
 *.pt
 *.ptl
-!src/assets/model/skin_cancer_v11.ptl

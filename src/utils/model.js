@@ -1,10 +1,10 @@
 /**
- * Skana Model Inference — v11
+ * Skana Model Inference — v15
  *
  * Uses react-native-pytorch-core for on-device PyTorch Mobile inference.
  * Falls back to a local FastAPI server (dev/simulator), then mock.
  *
- * v11 model takes TWO inputs and returns a TUPLE:
+ * v15 model takes TWO inputs and returns a TUPLE:
  *   Input 1 — image tensor:    [1, 3, 260, 260] float32
  *   Input 2 — metadata tensor: [1, 21] float32
  *       [0]    age / 100  (0.5 if unknown)
@@ -80,7 +80,7 @@ export async function loadModel() {
 
   try {
     const { Asset } = require('expo-asset');
-    const asset = Asset.fromModule(require('../assets/model/skin_cancer_v11.ptl'));
+    const asset = Asset.fromModule(require('../assets/model/skin_cancer_v15.ptl'));
     await asset.downloadAsync();
 
     const localUri = asset.localUri;
@@ -88,7 +88,7 @@ export async function loadModel() {
 
     model = await torch.jit._loadForMobile(filePath);
     isModelLoaded = true;
-    console.log('Model v11 loaded successfully from:', filePath);
+    console.log('Model v15 loaded successfully from:', filePath);
     return true;
   } catch (error) {
     console.error('Failed to load model, falling back to mock mode:', error);
@@ -167,7 +167,7 @@ async function preprocessImage(imageUri) {
 }
 
 async function predictViaLocalApi(imageUri, patientData) {
-  const FileSystem = require('expo-file-system');
+  const FileSystem = require('expo-file-system/legacy');
   const uri = imageUri.startsWith('file://') ? imageUri : `file://${imageUri}`;
   const image_b64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
 
@@ -215,7 +215,7 @@ export async function predict(imageUri, patientData = null) {
     const metaValues = buildMetadataArray(patientData);
     const metaTensor = torch.tensor([metaValues], { dtype: torch.float32 });
 
-    // v11 returns tuple: (probs [1,7], cancer_prob [1,1]) — already calibrated, no softmax
+    // v15 returns tuple: (probs [1,7], cancer_prob [1,1]) — already calibrated, no softmax
     const [probsTensor, cancerProbTensor] = await model.forward(imageTensor, metaTensor);
     const probs = Array.from(probsTensor.data());
     const cancerProb = Array.from(cancerProbTensor.data())[0];
@@ -240,9 +240,9 @@ export async function predict(imageUri, patientData = null) {
 const MAX_ENTROPY = Math.log(7);
 
 // Predictions with entropy above this fraction of MAX_ENTROPY are flagged OOD.
-// 0.65 * 1.9459 ≈ 1.265. Genuine lesion predictions sit at 0.05–0.40; confused
-// out-of-distribution images typically exceed 1.30.
-const ENTROPY_OOD_FRACTION = 0.65;
+// 0.70 * 1.9459 ≈ 1.362 — matches v15 model_metadata.json entropy_threshold.
+// Genuine lesion predictions sit at 0.05–0.40; OOD images typically exceed 1.36.
+const ENTROPY_OOD_FRACTION = 0.70;
 
 // Genuine lesion predictions almost always put ≥40% on one class.
 // Below this the model has no dominant signal regardless of entropy.

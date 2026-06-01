@@ -3,17 +3,20 @@ import Theme from './theme';
 // ─────────────────────────────────────────────────────────────────────────────
 // APP-SIDE INFERENCE GUARDRAILS
 //
-// MODEL_CONFIG.thresholds contains the raw optimal_thresholds from v11 training,
+// MODEL_CONFIG.thresholds contains the raw optimal_thresholds from v15 training,
 // tuned on a balanced dermoscopic test set with clean lesion crops.
 //
 // Two additional safety layers are applied at runtime via validateThresholds():
 //
-//   1. SAFE_THRESHOLD_FLOOR (0.10) — any threshold below this is at the statistical
-//      noise level of a 7-class softmax and fires on almost every image. Disabled (null).
-//
-//   2. APP_THRESHOLD_FLOORS — per-class minimum values for real-world phone photos.
+//   1. APP_THRESHOLD_FLOORS — per-class minimum values for real-world phone photos.
 //      Training images were clean dermoscope crops; phone photos are noisier, lower
 //      contrast, and often partially OOD. These floors prevent false cancer flags.
+//      Applied FIRST, before the noise floor check.
+//
+//   2. SAFE_THRESHOLD_FLOOR (0.10) — any effective threshold still below this after
+//      APP_THRESHOLD_FLOORS is at the statistical noise level and is disabled (null).
+//      v15 raw thresholds are very low (0.03–0.07) but APP_THRESHOLD_FLOORS raise
+//      all three well above 0.10, so none are disabled.
 //
 // These floors are app-side only. They do not affect the PTL model or training.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23,11 +26,11 @@ export const MODEL_CONFIG = {
   numClasses: 7,
   normalizeMean: [0.485, 0.456, 0.406],
   normalizeStd: [0.229, 0.224, 0.225],
-  // Raw optimal_thresholds from v11 training run — see guardrail comment above.
+  // Raw optimal_thresholds from v15 training run — see guardrail comment above.
   thresholds: {
-    melanoma: 0.20, // raw v11 value — raised to 0.35 by APP_THRESHOLD_FLOORS at runtime
-    bcc: 0.16,      // raw v11 value — raised to 0.25 by APP_THRESHOLD_FLOORS at runtime
-    actinic: 0.03,  // raw v11 value — disabled (null) by SAFE_THRESHOLD_FLOOR at runtime
+    melanoma: 0.07, // raw v15 value — raised to 0.35 by APP_THRESHOLD_FLOORS at runtime
+    bcc: 0.03,      // raw v15 value — raised to 0.25 by APP_THRESHOLD_FLOORS at runtime
+    actinic: 0.06,  // raw v15 value — raised to 0.15 by APP_THRESHOLD_FLOORS at runtime
   },
   tier: {
     benignThreshold: 0.20,
@@ -40,28 +43,30 @@ const SAFE_THRESHOLD_FLOOR = 0.10;
 
 // App-side per-class floors applied on top of raw training thresholds.
 const APP_THRESHOLD_FLOORS = {
-  melanoma: 0.35, // raw 0.20 — raised: phone photos reach 20% MEL on noise alone
-  bcc: 0.25,      // raw 0.16 — raised: reduces false BCC flags on ambiguous images
-  actinic: 0.15,  // moot — 0.03 is below SAFE_THRESHOLD_FLOOR and becomes null anyway
+  melanoma: 0.35, // raw v15 0.07 — raised: phone photos reach higher MEL on noise alone
+  bcc: 0.25,      // raw v15 0.03 — raised: reduces false BCC flags on ambiguous images
+  actinic: 0.15,  // raw v15 0.06 — raised: now active (was null in v11/v12)
 };
 
 function validateThresholds(thresholds) {
   const warnings = [];
   const validated = {};
   Object.entries(thresholds).forEach(([cls, thresh]) => {
-    if (thresh < SAFE_THRESHOLD_FLOOR) {
+    // Apply APP_THRESHOLD_FLOORS first — v15 raw thresholds are very low (0.03–0.07)
+    // and would all be nulled if the noise floor check ran first.
+    const appFloor = APP_THRESHOLD_FLOORS[cls] ?? null;
+    const effective = appFloor !== null ? Math.max(thresh, appFloor) : thresh;
+    if (effective > thresh) {
       warnings.push(
-        `"${cls}" threshold ${thresh} is below noise floor ${SAFE_THRESHOLD_FLOOR} — override disabled, argmax used.`
+        `"${cls}" threshold raised ${thresh} → ${effective} (app-side safety floor).`
+      );
+    }
+    if (effective < SAFE_THRESHOLD_FLOOR) {
+      warnings.push(
+        `"${cls}" effective threshold ${effective} is below noise floor ${SAFE_THRESHOLD_FLOOR} — override disabled, argmax used.`
       );
       validated[cls] = null;
     } else {
-      const appFloor = APP_THRESHOLD_FLOORS[cls] ?? SAFE_THRESHOLD_FLOOR;
-      const effective = Math.max(thresh, appFloor);
-      if (effective > thresh) {
-        warnings.push(
-          `"${cls}" threshold raised ${thresh} → ${effective} (app-side safety floor).`
-        );
-      }
       validated[cls] = effective;
     }
   });
@@ -71,7 +76,7 @@ function validateThresholds(thresholds) {
   return validated;
 }
 
-// Applied once at module load. Effective values: MEL=0.35, BCC=0.25, AK=null
+// Applied once at module load. Effective values: MEL=0.35, BCC=0.25, AK=0.15
 const VALIDATED_THRESHOLDS = validateThresholds(MODEL_CONFIG.thresholds);
 
 export const CANCER_INDICES = [1, 3, 4];
@@ -152,12 +157,12 @@ export function softmax(logits) {
 export function applyThresholds(probs) {
   const fired = [];
 
-  // MEL: flag as melanoma if model is ≥20% confident — clinical safety threshold
+  // MEL: flag as melanoma if model is ≥35% confident (app-safe floor, raw v15=0.07)
   if (VALIDATED_THRESHOLDS.melanoma !== null && probs[1] >= VALIDATED_THRESHOLDS.melanoma) fired.push(1);
-  // BCC: flag as BCC if model is ≥16% confident — clinical safety threshold
+  // BCC: flag as BCC if model is ≥25% confident (app-safe floor, raw v15=0.03)
   if (VALIDATED_THRESHOLDS.bcc !== null && probs[3] >= VALIDATED_THRESHOLDS.bcc) fired.push(3);
-  // AK: DISABLED — VALIDATED_THRESHOLDS.actinic is null (0.03 < 0.10 noise floor)
-  // Actinic keratoses is still detected via argmax when it has the highest probability
+  // AK: flag as actinic keratoses if model is ≥15% confident (app-safe floor, raw v15=0.06)
+  if (VALIDATED_THRESHOLDS.actinic !== null && probs[4] >= VALIDATED_THRESHOLDS.actinic) fired.push(4);
 
   // If multiple fire, pick the one with the highest probability per v11 spec
   if (fired.length > 0) {
@@ -167,7 +172,7 @@ export function applyThresholds(probs) {
   return probs.indexOf(Math.max(...probs));
 }
 
-// Tier is derived purely from cancer_prob per v11 spec:
+// Tier is derived purely from cancer_prob per v15 spec:
 // >= 0.50 → Suspicious, >= 0.20 → Uncertain, < 0.20 → Likely Benign
 export function getTier(cancerProb) {
   if (cancerProb >= MODEL_CONFIG.tier.suspiciousThreshold) return TIER.SUSPICIOUS;
